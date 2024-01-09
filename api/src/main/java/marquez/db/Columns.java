@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -90,6 +91,7 @@ public final class Columns {
   public static final String SCHEMA_LOCATION = "schema_location";
 
   /* JOB ROW COLUMNS */
+  public static final String PARENT_JOB_UUID = "parent_job_uuid";
   public static final String PARENT_JOB_NAME = "parent_job_name";
   public static final String SIMPLE_NAME = "simple_name";
   public static final String SYMLINK_TARGET_UUID = "symlink_target_uuid";
@@ -147,6 +149,11 @@ public final class Columns {
       return null;
     }
     return results.getObject(column, UUID.class);
+  }
+
+  public static Optional<UUID> optionalUuidOrNull(final ResultSet results, final String column) throws SQLException {
+    UUID uuid = results.getObject(column, UUID.class);
+    return Optional.ofNullable(uuid);
   }
 
   public static UUID uuidOrThrow(final ResultSet results, final String column) throws SQLException {

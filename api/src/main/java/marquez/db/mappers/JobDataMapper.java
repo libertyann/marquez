@@ -5,6 +5,7 @@
 
 package marquez.db.mappers;
 
+import static marquez.db.Columns.optionalUuidOrNull;
 import static marquez.db.Columns.stringOrNull;
 import static marquez.db.Columns.stringOrThrow;
 import static marquez.db.Columns.timestampOrThrow;
@@ -38,6 +39,7 @@ public class JobDataMapper implements RowMapper<JobData> {
         JobType.valueOf(stringOrThrow(results, Columns.TYPE)),
         JobName.of(stringOrThrow(results, Columns.NAME)),
         stringOrThrow(results, Columns.SIMPLE_NAME),
+        optionalUuidOrNull(results, Columns.PARENT_JOB_UUID),
         stringOrNull(results, Columns.PARENT_JOB_NAME),
         timestampOrThrow(results, Columns.CREATED_AT),
         timestampOrThrow(results, Columns.UPDATED_AT),

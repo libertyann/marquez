@@ -176,6 +176,14 @@ public class LineageService extends DelegatingLineageDao {
               buildDatasetEdge(inputs, origin),
               buildDatasetEdge(origin, outputs));
       nodes.add(node);
+
+      data.getParentJobUuid().ifPresent(parentJobUuid -> {
+        log.error("------------------- First condition is working--------!!!!!!!!!!!!!!!!!!");
+        if (jobDataMap.containsKey(parentJobUuid)) {
+          log.error("------------------- Condition is working--------!!!!!!!!!!!!!!!!!!");
+          addParentChildJobRelationship(nodes, jobDataMap, parentJobUuid, data.getUuid());
+        }
+      });
     }
 
     for (DatasetData dataset : datasets) {
@@ -191,6 +199,49 @@ public class LineageService extends DelegatingLineageDao {
     }
 
     return new Lineage(Lineage.withSortedNodes(Graph.directed().nodes(nodes).build()));
+  }
+
+  private void addParentChildJobRelationship(Set<Node> nodes,
+      @NonNull Map<UUID, JobData> jobDataMap,
+      @NonNull UUID parentJobUuid,
+      @NonNull UUID childJobUuid) {
+    JobData parentJobData = jobDataMap.get(parentJobUuid);
+    JobData childJobData = jobDataMap.get(childJobUuid);
+
+    if (parentJobData == null || childJobData == null) {
+      log.error("Parent or Child job data not found");
+      return;
+    }
+    // Set parent job reference in child JobData
+    // if (childJobData != null) {
+    //   childJobData.setParentJobUuid(Optional.of(parentJobUuid));
+    // }
+    log.error("------------------- Going through this method--------!!!!!!!!!!!!!!!!!!");
+    // Add or update the nodes in the graph
+    // Assuming that the graph.add method updates the node if it already exists
+    NodeId parentJobNodeId = NodeId.of(new JobId(parentJobData.getNamespace(), parentJobData.getName()));
+    NodeId childJobNodeId = NodeId.of(new JobId(childJobData.getNamespace(), childJobData.getName()));
+
+    // Create the edge from parent to child
+    //ImmutableSet<Edge> edges = ImmutableSet.of(new Edge(parentJobNodeId, childJobNodeId));
+    Edge parentToChildEdge = new Edge(parentJobNodeId, childJobNodeId);
+
+    // Create or update nodes in the graph
+    //Node parentNode = new Node(parentJobNodeId, NodeType.JOB, parentJobData, ImmutableSet.of(), edges);
+    //Node childNode = new Node(childJobNodeId, NodeType.JOB, childJobData, edges, ImmutableSet.of());
+    Node parentNode = new Node(parentJobNodeId, NodeType.JOB, parentJobData, ImmutableSet.of(), ImmutableSet.of(parentToChildEdge));
+    Node childNode = new Node(childJobNodeId, NodeType.JOB, childJobData, ImmutableSet.of(parentToChildEdge), ImmutableSet.of());
+
+    //nodes.add(parentNode);
+    //nodes.add(childNode);
+
+        // Add or update nodes
+        nodes.remove(parentNode);
+        nodes.add(parentNode);
+        nodes.remove(childNode);
+        nodes.add(childNode);
+
+
   }
 
   private ImmutableSet<DatasetId> buildDatasetId(Set<DatasetData> datasetData) {
