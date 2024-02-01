@@ -125,19 +125,27 @@ public interface LineageDao {
             WHERE j.parent_job_uuid IS NOT NULL
             AND ch.depth < :depth
         )
-    SELECT DISTINCT ON (j.uuid) j.*,
-        COALESCE(l.inputs, ARRAY[]::uuid[]) AS input_uuids,
-        COALESCE(l.outputs, ARRAY[]::uuid[]) AS output_uuids,
-        COALESCE(ph.depth, ch.depth, 0) AS hierarchy_depth
-    FROM jobs_view j
-    LEFT JOIN lineage l ON j.uuid = l.job_uuid
-    LEFT JOIN lineage_outside_job_io lo ON j.uuid = lo.job_uuid
-    LEFT JOIN parent_hierarchy ph ON j.uuid = ph.job_uuid
-    LEFT JOIN child_hierarchy ch ON j.uuid = ch.job_uuid
-    WHERE j.uuid IN (SELECT job_uuid FROM lineage)
-       OR j.uuid IN (SELECT job_uuid FROM parent_hierarchy)
-       OR j.uuid IN (SELECT job_uuid FROM child_hierarchy)
-    ORDER BY j.uuid, hierarchy_depth;
+    --SELECT DISTINCT ON (j.uuid) j.*,
+    --    COALESCE(l.inputs, ARRAY[]::uuid[]) AS input_uuids,
+    --    COALESCE(l.outputs, ARRAY[]::uuid[]) AS output_uuids,
+    --    COALESCE(ph.depth, ch.depth, 0) AS hierarchy_depth
+    --FROM jobs_view j
+    --LEFT JOIN lineage l ON j.uuid = l.job_uuid
+    --LEFT JOIN lineage_outside_job_io lo ON j.uuid = lo.job_uuid
+    --LEFT JOIN parent_hierarchy ph ON j.uuid = ph.job_uuid
+    --LEFT JOIN child_hierarchy ch ON j.uuid = ch.job_uuid
+    --WHERE j.uuid IN (SELECT job_uuid FROM lineage)
+    --   OR j.uuid IN (SELECT job_uuid FROM parent_hierarchy)
+    --   OR j.uuid IN (SELECT job_uuid FROM child_hierarchy)
+    --ORDER BY j.uuid, hierarchy_depth;
+    SELECT DISTINCT ON (j.uuid) j.*, inputs AS input_uuids, outputs AS output_uuids
+    FROM (SELECT * FROM lineage UNION SELECT * FROM lineage_outside_job_io) l2
+    INNER JOIN jobs_view j ON (
+        j.uuid=l2.job_uuid 
+        OR j.uuid=l2.job_symlink_target_uuid
+        OR j.uuid IN (SELECT job_uuid FROM parent_hierarchy)
+        OR j.uuid IN (SELECT job_uuid FROM child_hierarchy)
+        )
   """)
   Set<JobData> getLineage(@BindList Set<UUID> jobIds, int depth);
 
