@@ -55,18 +55,18 @@ public interface LineageDao {
    */
   @SqlQuery(
       """
-      WITH RECURSIVE
+        WITH RECURSIVE
         job_io AS (
             SELECT
-                io.job_uuid AS job_uuid,
-                io.job_symlink_target_uuid AS job_symlink_target_uuid,
-                ARRAY_AGG(DISTINCT io.dataset_uuid) FILTER (WHERE io.io_type='INPUT') AS inputs,
-                ARRAY_AGG(DISTINCT io.dataset_uuid) FILTER (WHERE io.io_type='OUTPUT') AS outputs
+                io.job_uuid,
+                io.job_symlink_target_uuid,
+                ARRAY_AGG(DISTINCT io.dataset_uuid) FILTER (WHERE io.io_type = 'INPUT') AS inputs,
+                ARRAY_AGG(DISTINCT io.dataset_uuid) FILTER (WHERE io.io_type = 'OUTPUT') AS outputs
             FROM job_versions_io_mapping io
             WHERE io.is_current_job_version = TRUE
-            GROUP BY io.job_symlink_target_uuid, io.job_uuid
+            GROUP BY io.job_uuid, io.job_symlink_target_uuid
         ),
-        lineage(job_uuid, job_symlink_target_uuid, inputs, outputs, depth) AS (
+        lineage(job_uuid, job_symlink_target_uuid, inputs, outputs) AS (
             SELECT job_uuid,
                    job_symlink_target_uuid,
                    COALESCE(inputs, Array[]::uuid[]) AS inputs,
@@ -76,43 +76,68 @@ public interface LineageDao {
             WHERE job_uuid IN (<jobIds>) OR job_symlink_target_uuid IN (<jobIds>)
             UNION
             SELECT io.job_uuid, io.job_symlink_target_uuid, io.inputs, io.outputs, l.depth + 1
-            FROM job_io io
-            JOIN lineage l ON array_cat(io.inputs, io.outputs) && array_cat(l.inputs, l.outputs)
-            WHERE depth < :depth
+            FROM job_io io, lineage l
+            WHERE (io.job_uuid != l.job_uuid) AND
+                array_cat(io.inputs, io.outputs) && array_cat(l.inputs, l.outputs)
+              AND depth < :depth),
+        lineage_outside_job_io(job_uuid) AS (
+            SELECT
+              param_jobs.param_job_uuid as job_uuid,
+              j.symlink_target_uuid,
+              Array[]::uuid[] AS inputs,
+              Array[]::uuid[] AS outputs,
+              0 AS depth
+            FROM (SELECT unnest(ARRAY[<jobIds>]::UUID[]) AS param_job_uuid) param_jobs
+            LEFT JOIN lineage l on param_jobs.param_job_uuid = l.job_uuid
+            INNER JOIN jobs j ON j.uuid = param_jobs.param_job_uuid
+            WHERE l.job_uuid IS NULL
         ),
-        parent_child(job_uuid, depth) AS (
-            SELECT uuid, 0 AS depth
+        parent_hierarchy AS (
+            SELECT
+                uuid AS job_uuid,
+                parent_job_uuid,
+                0 AS depth
             FROM jobs
             WHERE uuid IN (<jobIds>)
-            
             UNION ALL
-            
-            SELECT j.parent_job_uuid, pc.depth + 1
-            FROM jobs j
-            JOIN parent_child pc ON j.uuid = pc.job_uuid
-            WHERE j.parent_job_uuid IS NOT NULL
-        ),
-        lineage_outside_job_io AS (
             SELECT
-                param_jobs.param_job_uuid AS job_uuid,
-                j.symlink_target_uuid,
-                Array[]::uuid[] AS inputs,
-                Array[]::uuid[] AS outputs,
+                j.uuid,
+                j.parent_job_uuid,
+                ph.depth + 1
+            FROM jobs j
+            JOIN parent_hierarchy ph ON j.uuid = ph.parent_job_uuid
+            WHERE ph.depth < :depth
+        ),
+        child_hierarchy AS (
+            SELECT
+                uuid AS job_uuid,
+                parent_job_uuid,
                 0 AS depth
-            FROM (SELECT unnest(ARRAY[<jobIds>]::UUID[]) AS param_job_uuid) param_jobs
-            LEFT JOIN lineage l ON param_jobs.param_job_uuid = l.job_uuid
-            LEFT JOIN parent_child pc ON param_jobs.param_job_uuid = pc.job_uuid
-            INNER JOIN jobs j ON j.uuid = param_jobs.param_job_uuid
-            WHERE l.job_uuid IS NULL AND pc.job_uuid IS NULL
+            FROM jobs
+            WHERE uuid IN (<jobIds>)
+            UNION ALL
+            SELECT
+                j.uuid,
+                j.parent_job_uuid,
+                ch.depth + 1
+            FROM jobs j
+            JOIN child_hierarchy ch ON j.parent_job_uuid = ch.job_uuid
+            WHERE j.parent_job_uuid IS NOT NULL
+            AND ch.depth < :depth
         )
-      SELECT DISTINCT ON (j.uuid) j.*, COALESCE(l.inputs, lo.inputs) AS input_uuids, COALESCE(l.outputs, lo.outputs) AS output_uuids
-      FROM jobs_view j
-      LEFT JOIN lineage l ON j.uuid = l.job_uuid
-      LEFT JOIN lineage_outside_job_io lo ON j.uuid = lo.job_uuid
-      WHERE j.uuid IN (SELECT job_uuid FROM lineage)
-         OR j.uuid IN (SELECT job_uuid FROM parent_child)
-         OR j.uuid IN (SELECT job_uuid FROM lineage_outside_job_io)
-      ORDER BY j.uuid, COALESCE(l.depth, lo.depth);
+    SELECT DISTINCT ON (j.uuid) j.*,
+        COALESCE(l.inputs, ARRAY[]::uuid[]) AS input_uuids,
+        COALESCE(l.outputs, ARRAY[]::uuid[]) AS output_uuids,
+        COALESCE(ph.depth, ch.depth, 0) AS hierarchy_depth
+    FROM jobs_view j
+    LEFT JOIN lineage l ON j.uuid = l.job_uuid
+    LEFT JOIN lineage_outside_job_io lo ON j.uuid = lo.job_uuid
+    LEFT JOIN parent_hierarchy ph ON j.uuid = ph.job_uuid
+    LEFT JOIN child_hierarchy ch ON j.uuid = ch.job_uuid
+    WHERE j.uuid IN (SELECT job_uuid FROM lineage)
+       OR j.uuid IN (SELECT job_uuid FROM parent_hierarchy)
+       OR j.uuid IN (SELECT job_uuid FROM child_hierarchy)
+    ORDER BY j.uuid, hierarchy_depth;
   """)
   Set<JobData> getLineage(@BindList Set<UUID> jobIds, int depth);
 

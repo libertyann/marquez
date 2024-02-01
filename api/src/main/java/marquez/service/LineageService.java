@@ -201,10 +201,9 @@ public class LineageService extends DelegatingLineageDao {
     return new Lineage(Lineage.withSortedNodes(Graph.directed().nodes(nodes).build()));
   }
 
-  private void addParentChildJobRelationship(Set<Node> nodes,
-      @NonNull Map<UUID, JobData> jobDataMap,
-      @NonNull UUID parentJobUuid,
-      @NonNull UUID childJobUuid) {
+
+  private void addParentChildJobRelationship(Set nodes, @NonNull Map<UUID, JobData> jobDataMap,
+      @NonNull UUID parentJobUuid, @NonNull UUID childJobUuid) {
     JobData parentJobData = jobDataMap.get(parentJobUuid);
     JobData childJobData = jobDataMap.get(childJobUuid);
 
@@ -212,37 +211,75 @@ public class LineageService extends DelegatingLineageDao {
       log.error("Parent or Child job data not found");
       return;
     }
-    // Set parent job reference in child JobData
-    // if (childJobData != null) {
-    //   childJobData.setParentJobUuid(Optional.of(parentJobUuid));
-    // }
-    log.error("------------------- Going through this method--------!!!!!!!!!!!!!!!!!!");
-    // Add or update the nodes in the graph
-    // Assuming that the graph.add method updates the node if it already exists
+
     NodeId parentJobNodeId = NodeId.of(new JobId(parentJobData.getNamespace(), parentJobData.getName()));
     NodeId childJobNodeId = NodeId.of(new JobId(childJobData.getNamespace(), childJobData.getName()));
 
-    // Create the edge from parent to child
-    //ImmutableSet<Edge> edges = ImmutableSet.of(new Edge(parentJobNodeId, childJobNodeId));
     Edge parentToChildEdge = new Edge(parentJobNodeId, childJobNodeId);
 
-    // Create or update nodes in the graph
-    //Node parentNode = new Node(parentJobNodeId, NodeType.JOB, parentJobData, ImmutableSet.of(), edges);
-    //Node childNode = new Node(childJobNodeId, NodeType.JOB, childJobData, edges, ImmutableSet.of());
-    Node parentNode = new Node(parentJobNodeId, NodeType.JOB, parentJobData, ImmutableSet.of(), ImmutableSet.of(parentToChildEdge));
-    Node childNode = new Node(childJobNodeId, NodeType.JOB, childJobData, ImmutableSet.of(parentToChildEdge), ImmutableSet.of());
+    Set parentEdges = ImmutableSet.of();
+    Set childEdges = ImmutableSet.of(parentToChildEdge);
 
-    //nodes.add(parentNode);
-    //nodes.add(childNode);
+    Node parentNode = new Node(parentJobNodeId, NodeType.JOB, parentJobData, parentEdges, ImmutableSet.of());
+    Node childNode = new Node(childJobNodeId, NodeType.JOB, childJobData, ImmutableSet.of(), childEdges);
 
-        // Add or update nodes
-        nodes.remove(parentNode);
-        nodes.add(parentNode);
-        nodes.remove(childNode);
-        nodes.add(childNode);
-
-
+    nodes.remove(parentNode);
+    nodes.add(parentNode);
+    nodes.remove(childNode);
+    nodes.add(childNode);
   }
+
+
+  // private void addParentChildJobRelationship(Set<Node> nodes,
+  //     @NonNull Map<UUID, JobData> jobDataMap,
+  //     @NonNull UUID parentJobUuid,
+  //     @NonNull UUID childJobUuid) {
+  //   JobData parentJobData = jobDataMap.get(parentJobUuid);
+  //   JobData childJobData = jobDataMap.get(childJobUuid);
+
+  //   if (parentJobData == null || childJobData == null) {
+  //     log.error("Parent or Child job data not found");
+  //     return;
+  //   }
+  //   // Set parent job reference in child JobData
+  //   // if (childJobData != null) {
+  //   //   childJobData.setParentJobUuid(Optional.of(parentJobUuid));
+  //   // }
+  //   log.error("------------------- Going through this method--------!!!!!!!!!!!!!!!!!!");
+  //   // Add or update the nodes in the graph
+  //   // Assuming that the graph.add method updates the node if it already exists
+  //   //NodeId parentJobNodeId = NodeId.of(new JobId(parentJobData.getNamespace(), parentJobData.getName()));
+  //   //NodeId childJobNodeId = NodeId.of(new JobId(childJobData.getNamespace(), childJobData.getName()));
+
+  //   // Create the edge from parent to child
+  //   //ImmutableSet<Edge> edges = ImmutableSet.of(new Edge(parentJobNodeId, childJobNodeId));
+  //   //Edge parentToChildEdge = new Edge(parentJobNodeId, childJobNodeId);
+  //   ImmutableSet<Edge> jobToJobEdges = buildJobToJobEdge(parentJobUuid, childJobUuid, jobDataMap);
+
+  //   // Create or update nodes in the graph
+  //   //Node parentNode = new Node(parentJobNodeId, NodeType.JOB, parentJobData, ImmutableSet.of(), edges);
+  //   //Node childNode = new Node(childJobNodeId, NodeType.JOB, childJobData, edges, ImmutableSet.of());
+  //   //Node parentNode = new Node(parentJobNodeId, NodeType.JOB, parentJobData, ImmutableSet.of(), ImmutableSet.of(parentToChildEdge));
+  //   //Node childNode = new Node(childJobNodeId, NodeType.JOB, childJobData, ImmutableSet.of(parentToChildEdge), ImmutableSet.of());
+  //   Edge parentToChildEdge = jobToJobEdges.iterator().next();
+    
+  //   NodeId parentJobNodeId = buildEdge(parentJobData);
+  //   NodeId childJobNodeId = buildEdge(childJobData);
+    
+  //   Node parentNode = new Node(parentJobNodeId, NodeType.JOB, parentJobData, ImmutableSet.of(), ImmutableSet.of(parentToChildEdge));
+  //   Node childNode = new Node(childJobNodeId, NodeType.JOB, childJobData, ImmutableSet.of(parentToChildEdge), ImmutableSet.of());
+
+  //   //nodes.add(parentNode);
+  //   //nodes.add(childNode);
+
+  //       // Add or update nodes
+  //       nodes.remove(parentNode);
+  //       nodes.add(parentNode);
+  //       nodes.remove(childNode);
+  //       nodes.add(childNode);
+
+
+  // }
 
   private ImmutableSet<DatasetId> buildDatasetId(Set<DatasetData> datasetData) {
     if (datasetData == null) {
@@ -293,6 +330,30 @@ public class LineageService extends DelegatingLineageDao {
     return datasetData.stream()
         .map(ds -> new Edge(buildEdge(ds), nodeId))
         .collect(ImmutableSet.toImmutableSet());
+  }
+
+
+  private ImmutableSet<Edge> buildJobToJobEdge(UUID parentJobUuid, UUID childJobUuid, Map<UUID, JobData> jobDataMap) {
+    // Check if either UUID is null
+    if (parentJobUuid == null || childJobUuid == null) {
+      return ImmutableSet.of();
+    }
+
+    // Get the parent and child JobData from the map
+    JobData parentJobData = jobDataMap.get(parentJobUuid);
+    JobData childJobData = jobDataMap.get(childJobUuid);
+
+    // Check if either JobData is null
+    if (parentJobData == null || childJobData == null) {
+      return ImmutableSet.of();
+    }
+
+    // Create NodeIds for the parent and child jobs
+    NodeId parentNodeId = buildEdge(parentJobData);
+    NodeId childNodeId = buildEdge(childJobData);
+
+    // Create and return the edge
+    return ImmutableSet.of(new Edge(parentNodeId, childNodeId));
   }
 
   private NodeId buildEdge(DatasetData ds) {
