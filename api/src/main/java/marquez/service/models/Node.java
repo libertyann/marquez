@@ -21,25 +21,29 @@ import lombok.ToString;
 
 @EqualsAndHashCode
 @ToString
-@JsonPropertyOrder({"id", "type", "data", "inEdges", "outEdges"})
+@JsonPropertyOrder({"id", "type", "data", "inEdges", "outEdges", "parentEdges"})
 public final class Node implements Comparable<Node> {
   @Getter private final NodeId id;
   @Getter private final NodeType type;
   @Getter @Setter @Nullable private NodeData data;
   @Getter private final Set<Edge> inEdges;
   @Getter private final Set<Edge> outEdges;
+  @Getter private final Set<Edge> parentEdges;
+
 
   public Node(
       @NonNull final NodeId id,
       @NonNull final NodeType type,
       @Nullable final NodeData data,
       @Nullable final Set<Edge> inEdges,
-      @Nullable final Set<Edge> outEdges) {
+      @Nullable final Set<Edge> outEdges,
+      @Nullable final Set<Edge> parentEdges) {
     this.id = id;
     this.type = type;
     this.data = data;
     this.inEdges = (inEdges == null) ? ImmutableSet.of() : ImmutableSortedSet.copyOf(inEdges);
     this.outEdges = (outEdges == null) ? ImmutableSet.of() : ImmutableSortedSet.copyOf(outEdges);
+    this.parentEdges = (parentEdges == null) ? ImmutableSet.of() : ImmutableSortedSet.copyOf(parentEdges);
   }
 
   @Override
@@ -71,17 +75,23 @@ public final class Node implements Comparable<Node> {
     return !outEdges.isEmpty();
   }
 
+  public boolean hasParentEdges() {
+    return !parentEdges.isEmpty();
+  }
+
   public static final class Builder {
     private NodeId id;
     private final NodeType type;
     private NodeData data;
     private Set<Edge> inEdges;
     private Set<Edge> outEdges;
+    private Set<Edge> parentEdges;
 
     private Builder(@NonNull final NodeType type) {
       this.type = type;
       this.inEdges = ImmutableSet.of();
       this.outEdges = ImmutableSet.of();
+      this.parentEdges = ImmutableSet.of();
     }
 
     public Builder id(@NonNull String idString) {
@@ -118,8 +128,18 @@ public final class Node implements Comparable<Node> {
       return this;
     }
 
+    public Builder parentEdges(@NonNull Edge... parentEdges) {
+      this.parentEdges = Sets.newHashSet(parentEdges);
+      return this;
+    }
+
+    public Builder parentEdges(@Nullable Set<Edge> parentEdges) {
+      this.parentEdges = (parentEdges == null) ? ImmutableSet.of() : parentEdges;
+      return this;
+    }
+
     public Node build() {
-      return new Node(id, type, data, inEdges, outEdges);
+      return new Node(id, type, data, inEdges, outEdges, parentEdges);
     }
   }
 }
