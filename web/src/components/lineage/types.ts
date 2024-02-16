@@ -51,6 +51,7 @@ export interface LineageNode {
   data: LineageDataset | LineageJob
   inEdges: LineageEdge[]
   outEdges: LineageEdge[]
+  parentEdges: LineageEdge[]
 }
 
 export interface MqNode {

@@ -54,6 +54,11 @@ public class JobData implements NodeData {
     return Optional.ofNullable(description);
   }
 
+  @JsonIgnore
+  public JobId getId(){
+    return id;
+  }
+
   public Optional<Run> getLatestRun() {
     return Optional.ofNullable(latestRun);
   }

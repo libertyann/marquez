@@ -166,6 +166,13 @@ public interface LineageDao {
   DatasetData getDatasetData(String namespaceName, String datasetName);
 
   @SqlQuery(
+    """
+    SELECT j.*, NULL as input_uuids, NULL AS output_uuids FROM jobs_view j
+    WHERE j.parent_job_uuid= :jobId
+    LIMIT 1""")
+  Optional<JobData> getParentJobData(Optional<UUID> jobId);
+
+  @SqlQuery(
       """
       SELECT j.uuid FROM jobs j
       INNER JOIN job_versions jv ON jv.job_uuid = j.uuid

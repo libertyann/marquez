@@ -86,7 +86,14 @@ export function buildGraphAll(
       data: graph[i].data,
       width: NODE_SIZE,
       height: NODE_SIZE,
-    })
+    });
+
+    // If the current node is a job and has a parent, add an edge from parent to child
+    if (graph[i].type === 'JOB' && graph[i].parentEdges) {
+      for (let j = 0; j < graph[i].parentEdges.length; j++) {
+        g.setEdge(graph[i].parentEdges[j].origin, graph[i].id);
+      }
+    }
   }
 
   // edges

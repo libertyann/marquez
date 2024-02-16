@@ -8,6 +8,8 @@ package marquez.service;
 import static java.util.stream.Collectors.groupingBy;
 import static java.util.stream.Collectors.toList;
 
+import java.util.Collection;
+
 import com.google.common.base.Functions;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
@@ -75,7 +77,8 @@ public class LineageService extends DelegatingLineageDao {
     }
     UUID job = optionalUUID.get();
     log.debug("Attempting to get lineage for job '{}'", job);
-    Set<JobData> jobData = getLineage(Collections.singleton(job), depth);
+    Set<JobData> immutableJobData = getLineage(Collections.singleton(job), depth);
+    Set<JobData> jobData = new HashSet<>(immutableJobData);
 
     // Ensure job data is not empty, an empty set cannot be passed to LineageDao.getCurrentRuns() or
     // LineageDao.getCurrentRunsWithFacets().
@@ -122,6 +125,14 @@ public class LineageService extends DelegatingLineageDao {
           nodeId.getValue());
       return toLineageWithOrphanDataset(nodeId.asDatasetId());
     }
+    //if (nodeId.isJobType()) {
+    //  Set<UUID> jobUuids = jobData.stream()
+     //                             .map(JobData::getUuid) // Directly get the UUID from JobData
+    //                              .collect(Collectors.toSet());
+    //  
+    //  Collection<JobData> parentJobData = this.getParentJobData(jobUuids);
+    //  jobData.addAll(parentJobData); // Use .addAll() for a collection
+  //}
 
     return toLineage(jobData, datasets);
   }
@@ -140,8 +151,12 @@ public class LineageService extends DelegatingLineageDao {
     Map<UUID, DatasetData> datasetById =
         datasets.stream().collect(Collectors.toMap(DatasetData::getUuid, Functions.identity()));
 
+    Map<Optional<UUID>, JobData> parentById =
+        jobData.stream().collect(Collectors.toMap(JobData::getParentJobUuid, Functions.identity()));
+
     Map<DatasetData, Set<UUID>> dsInputToJob = new HashMap<>();
     Map<DatasetData, Set<UUID>> dsOutputToJob = new HashMap<>();
+    Map<JobData, Set<UUID>> dsParentToJob = new HashMap<>();
     // build jobs
     Map<UUID, JobData> jobDataMap = Maps.uniqueIndex(jobData, JobData::getUuid);
     for (JobData data : jobData) {
@@ -161,18 +176,36 @@ public class LineageService extends DelegatingLineageDao {
               .collect(Collectors.toSet());
       data.setInputs(buildDatasetId(inputs));
       data.setOutputs(buildDatasetId(outputs));
+      Set<JobData> parents =
+          data.getParentJobUuid().stream()
+              .map(parentById::get)
+              .filter(Objects::nonNull)
+              .collect(Collectors.toSet());
 
       inputs.forEach(
           ds -> dsInputToJob.computeIfAbsent(ds, e -> new HashSet<>()).add(data.getUuid()));
       outputs.forEach(
           ds -> dsOutputToJob.computeIfAbsent(ds, e -> new HashSet<>()).add(data.getUuid()));
+      parents.forEach(
+        ds -> dsParentToJob.computeIfAbsent(ds, e -> new HashSet<>()).add(data.getUuid()));
 
       NodeId origin = NodeId.of(new JobId(data.getNamespace(), data.getName()));
+
+      Set<Edge> parentEdges = new HashSet<>();
+      Optional<JobData> parentJobData = getParentJobData(data.getParentJobUuid());
+      parentJobData.ifPresent(parent -> {
+        log.error("--------Condition is working-------- parent: {}, child: {}",parent.getId().getName(), data.getParentJobName());
+        Edge parentEdge = new Edge(origin, NodeId.of(parent.getId()));
+        log.error("--------Condition is working-------- {}",parentEdge);
+        parentEdges.add(parentEdge);
+      });
+      
       Node node =
           new Node(
               origin,
               NodeType.JOB,
               data,
+              parentEdges,
               buildDatasetEdge(inputs, origin),
               buildDatasetEdge(origin, outputs));
       nodes.add(node);
@@ -193,6 +226,7 @@ public class LineageService extends DelegatingLineageDao {
               origin,
               NodeType.DATASET,
               dataset,
+              buildJobToJobEdge(null, origin, jobDataMap),
               buildJobEdge(dsOutputToJob.get(dataset), origin, jobDataMap),
               buildJobEdge(origin, dsInputToJob.get(dataset), jobDataMap));
       nodes.add(node);
@@ -202,46 +236,48 @@ public class LineageService extends DelegatingLineageDao {
   }
 
 
-  private void addParentChildJobRelationship(Set nodes, @NonNull Map<UUID, JobData> jobDataMap,
-      @NonNull UUID parentJobUuid, @NonNull UUID childJobUuid) {
-    JobData parentJobData = jobDataMap.get(parentJobUuid);
-    JobData childJobData = jobDataMap.get(childJobUuid);
+  // private void addParentChildJobRelationship(Set nodes, @NonNull Map<UUID, JobData> jobDataMap,
+  //     @NonNull UUID parentJobUuid, @NonNull UUID childJobUuid) {
+  //   JobData parentJobData = jobDataMap.get(parentJobUuid);
+  //   JobData childJobData = jobDataMap.get(childJobUuid);
 
-    if (parentJobData == null || childJobData == null) {
-      log.error("Parent or Child job data not found");
-      return;
-    }
+  //   if (parentJobData == null || childJobData == null) {
+  //     log.error("Parent or Child job data not found");
+  //     return;
+  //   }
 
-    NodeId parentJobNodeId = NodeId.of(new JobId(parentJobData.getNamespace(), parentJobData.getName()));
-    NodeId childJobNodeId = NodeId.of(new JobId(childJobData.getNamespace(), childJobData.getName()));
+  //   NodeId parentJobNodeId = NodeId.of(new JobId(parentJobData.getNamespace(), parentJobData.getName()));
+  //   NodeId childJobNodeId = NodeId.of(new JobId(childJobData.getNamespace(), childJobData.getName()));
 
-    //Edge parentToChildEdge = new Edge(parentJobNodeId, childJobNodeId);
+  //   //Edge parentToChildEdge = new Edge(parentJobNodeId, childJobNodeId);
 
-    //Set parentEdges = ImmutableSet.of();
-    //Set childEdges = ImmutableSet.of(parentToChildEdge);
+  //   //Set parentEdges = ImmutableSet.of();
+  //   //Set childEdges = ImmutableSet.of(parentToChildEdge);
 
-    //Node parentNode = new Node(parentJobNodeId, NodeType.JOB, parentJobData, parentEdges, ImmutableSet.of());
-    //Node childNode = new Node(childJobNodeId, NodeType.JOB, childJobData, ImmutableSet.of(), childEdges);
-    Node parentNode = new Node(
-                            parentJobNodeId, 
-                            NodeType.JOB, 
-                            parentJobData, 
-                            buildJobToJobEdge(parentJobUuid, childJobUuid, jobDataMap),
-                            buildJobToJobEdge(childJobUuid, parentJobUuid, jobDataMap)
-                            );
-    Node childNode = new Node(
-                              childJobNodeId, 
-                              NodeType.JOB, 
-                              childJobData, 
-                              buildJobToJobEdge(parentJobUuid, childJobUuid, jobDataMap),
-                              buildJobToJobEdge(childJobUuid, parentJobUuid, jobDataMap)
-                              );
+  //   //Node parentNode = new Node(parentJobNodeId, NodeType.JOB, parentJobData, parentEdges, ImmutableSet.of());
+  //   //Node childNode = new Node(childJobNodeId, NodeType.JOB, childJobData, ImmutableSet.of(), childEdges);
+  //   Node parentNode = new Node(
+  //                           parentJobNodeId, 
+  //                           NodeType.JOB, 
+  //                           parentJobData, 
+  //                           buildJobToJobEdge(parents, origin, jobDataMap),
+  //                           buildJobToJobEdge(parentJobUuid, childJobUuid, jobDataMap),
+  //                           buildJobToJobEdge(childJobUuid, parentJobUuid, jobDataMap)
+  //                           );
+  //   Node childNode = new Node(
+  //                             childJobNodeId, 
+  //                             NodeType.JOB, 
+  //                             childJobData, 
+  //                             buildJobToJobEdge(parents, origin, jobDataMap),
+  //                             buildJobToJobEdge(parentJobUuid, childJobUuid, jobDataMap),
+  //                             buildJobToJobEdge(childJobUuid, parentJobUuid, jobDataMap)
+  //                             );
 
-    //nodes.remove(parentNode);
-    nodes.add(parentNode);
-    //nodes.remove(childNode);
-    nodes.add(childNode);
-  }
+  //   //nodes.remove(parentNode);
+  //   nodes.add(parentNode);
+  //   //nodes.remove(childNode);
+  //   nodes.add(childNode);
+  // }
 
   private ImmutableSet<DatasetId> buildDatasetId(Set<DatasetData> datasetData) {
     if (datasetData == null) {
@@ -295,27 +331,15 @@ public class LineageService extends DelegatingLineageDao {
   }
 
 
-  private ImmutableSet<Edge> buildJobToJobEdge(UUID parentJobUuid, UUID childJobUuid, Map<UUID, JobData> jobDataMap) {
+  private ImmutableSet<Edge> buildJobToJobEdge(Set<JobData> parentJobs, NodeId origin, Map<UUID, JobData> jobDataMap) {
     // Check if either UUID is null
-    if (parentJobUuid == null || childJobUuid == null) {
+    if (parentJobs == null) {
       return ImmutableSet.of();
     }
-
-    // Get the parent and child JobData from the map
-    JobData parentJobData = jobDataMap.get(parentJobUuid);
-    JobData childJobData = jobDataMap.get(childJobUuid);
-
-    // Check if either JobData is null
-    if (parentJobData == null || childJobData == null) {
-      return ImmutableSet.of();
-    }
-
-    // Create NodeIds for the parent and child jobs
-    NodeId parentNodeId = buildEdge(parentJobData);
-    NodeId childNodeId = buildEdge(childJobData);
-
-    // Create and return the edge
-    return ImmutableSet.of(new Edge(parentNodeId, childNodeId));
+    
+    return parentJobs.stream()
+        .map(j -> new Edge(buildEdge(j), origin))
+        .collect(ImmutableSet.toImmutableSet());
   }
 
   private NodeId buildEdge(DatasetData ds) {
